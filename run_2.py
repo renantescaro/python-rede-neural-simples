@@ -50,6 +50,7 @@ class Parametro:
         self.caminho_entradas = f'assets/{sub_pasta}'
         self.imagem_unica = imagem_unica
 
+
     def _listar_arquivos(self) -> None:
         for _, _, files in os.walk(os.path.abspath(self.caminho_entradas)):
             self.arquivos.extend(iter(files))
@@ -79,7 +80,6 @@ class Parametro:
             binario = self._caracter_para_binario(caracter)
             saida_atual = self._binario_para_saida_esperada_ativacao(binario)
             saida_numero = np.concatenate((saida_numero, np.array(saida_atual)))
-
         self.saidas.append(saida_numero)
 
     def _binario_para_saida_esperada_ativacao(self, binario:str):
@@ -117,22 +117,10 @@ class TreinamentoPerceptronMultiCamadas:
     def _derivar(self, valor: Any) -> Any:
         return 1.0 - np.tanh(valor)**2
 
-    def _delta_saida(self, erro_camada_saida, camada_saida_ativada):
-        return np.multiply(
-            erro_camada_saida,
-            self._derivar(camada_saida_ativada)
-        )
-
-    def _delta_oculta(self, delta_saida, camada_oculta_ativada):
-        return np.multiply(
-            delta_saida.dot(self.pesos_camada_saida.T),
-            self._derivar(camada_oculta_ativada)
-        )
-
-    def _novos_pesos(self, pesos_antigos, pesos_novos):
+    def _novos_pesos(self, pesos_antigos, oculta_t_delta):
         return np.add(
             np.multiply(pesos_antigos, self.momento),
-            np.multiply(pesos_novos, self.apredizagem)
+            np.multiply(oculta_t_delta, self.apredizagem)
         )
 
     def _gerar_pesos(self) -> None:
@@ -150,7 +138,6 @@ class TreinamentoPerceptronMultiCamadas:
             len(self.saidas[0]), # qtd colunas
         )) -1 # torna negativo
 
-
     def executar(self) -> float:
         self._gerar_pesos()
 
@@ -166,18 +153,27 @@ class TreinamentoPerceptronMultiCamadas:
             erro_camada_saida = np.subtract(self.saidas, camada_saida_ativada)
             media_absoluta = np.mean(np.abs(erro_camada_saida))
             porcentagem_erro = media_absoluta*100
-            self.medias_absolutas.append(porcentagem_erro)
 
             print('porcentagem_erro', format(float(porcentagem_erro), 'f'))
 
             # backprop
-            delta_saida = self._delta_saida(erro_camada_saida, camada_saida_ativada)
-            pesos_saida_novos = camada_oculta_ativada.T.dot(delta_saida)
-            self.pesos_camada_saida = self._novos_pesos(self.pesos_camada_saida, pesos_saida_novos)
+            novos_pesos_saida = np.dot(
+                camada_oculta_ativada.T,
+                2*(self.saidas - camada_saida_ativada) * self._derivar(camada_saida_ativada)
+            )
 
-            delta_oculta = self._delta_oculta(delta_saida, camada_oculta_ativada)
-            pesos_oculta_novos = self.entradas.T.dot(delta_oculta)
-            self.pesos_camada_oculta = self._novos_pesos(self.pesos_camada_oculta, pesos_oculta_novos)
+            novos_pesos_oculta = np.dot(
+                self.entradas.T,
+                (
+                    np.dot(
+                        2*(self.saidas - camada_saida_ativada) * self._derivar(camada_saida_ativada),
+                        self.pesos_camada_saida.T
+                    ) * self._derivar(camada_oculta_ativada)
+                )
+            )
+
+            self.pesos_camada_saida += novos_pesos_saida
+            self.pesos_camada_oculta += novos_pesos_oculta
 
         return porcentagem_erro
 
